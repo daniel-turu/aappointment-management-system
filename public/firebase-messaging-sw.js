@@ -29,8 +29,7 @@ if (apiKey && messagingSenderId) {
       const notificationTitle = payload.notification?.title || "FUTMinna Clinic Update";
       const notificationOptions = {
         body: payload.notification?.body || "You have a new update regarding your appointment.",
-        icon: '/icons/icon-192x192.png', // Fallback icon path
-        badge: '/icons/badge.png',
+        icon: 'https://futminna.edu.ng/wp-content/uploads/2022/11/cropped-futlogo1-192x192.png',
         data: payload.data || {}
       };
 

@@ -29,11 +29,13 @@ const AppointmentSchema = new mongoose.Schema(
     // Arrival Check System Fields
     arrivalStatus: {
       type: String,
-      enum: ["none", "checking", "arrived", "delayed", "no_show_reported"],
+      enum: ["none", "checking", "arrived", "delayed", "no_show_reported", "flagged_late", "completed"],
       default: "none",
     },
     arrivalCheckCount: { type: Number, default: 0 },
     arrivalEta: { type: String },
+    etaExpiresAt: { type: Date },
+    checkoutTime: { type: Date },
   },
   { timestamps: true }
 );

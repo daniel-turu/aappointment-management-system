@@ -2,8 +2,15 @@
 
 import { useState, useTransition } from "react"
 import StaffTriageList from "./StaffTriageList"
-import { updateQueueStatus, getTodayQueue, processTimeShift, getPendingTimeShifts } from "@/actions/appointments"
-import { ClipboardList, Play, CheckCircle2, AlertCircle, RefreshCw, Layers, CalendarRange, Check, X } from "lucide-react"
+import { 
+  updateQueueStatus, 
+  getTodayQueue, 
+  processTimeShift, 
+  getPendingTimeShifts,
+  secretaryCancelFlaggedAppointment,
+  secretaryAllowExtraTime
+} from "@/actions/appointments"
+import { ClipboardList, Play, CheckCircle2, AlertCircle, RefreshCw, Layers, CalendarRange, Check, X, Clock, ShieldAlert } from "lucide-react"
 
 export default function StaffDashboardContainer({ initialPendingRequests, initialTodayQueue, initialPendingShifts = [] }) {
   const [activeTab, setActiveTab] = useState("triage")
@@ -35,6 +42,31 @@ export default function StaffDashboardContainer({ initialPendingRequests, initia
     setActionId(null)
   }
 
+  const handleCancelFlagged = async (apptId) => {
+    if (!confirm("Cancel this appointment because the student failed to arrive after 3 prompts?")) return;
+    setActionId(apptId)
+    const res = await secretaryCancelFlaggedAppointment(apptId, "Cancelled by Secretary: Student failed to arrive after 3 prompt attempts.")
+    if (res.success) {
+      const q = await getTodayQueue()
+      setTodayQueue(q)
+    } else {
+      alert(res.error || "Failed to cancel appointment.")
+    }
+    setActionId(null)
+  }
+
+  const handleAllowExtraTime = async (apptId) => {
+    setActionId(apptId)
+    const res = await secretaryAllowExtraTime(apptId)
+    if (res.success) {
+      const q = await getTodayQueue()
+      setTodayQueue(q)
+    } else {
+      alert(res.error || "Failed to extend appointment time.")
+    }
+    setActionId(null)
+  }
+
   const handleProcessShift = async (apptId, action) => {
     setShiftActionId(apptId)
     try {
@@ -55,19 +87,47 @@ export default function StaffDashboardContainer({ initialPendingRequests, initia
     }
   }
 
-  const getStatusBadge = (status) => {
-    switch (status) {
-      case "serving":
-        return <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">Serving</span>
-      case "approved":
-        return <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">Waiting</span>
-      case "completed":
-        return <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-zinc-100 text-zinc-600 border border-zinc-200">Completed</span>
-      case "no_show":
-        return <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-200">No Show</span>
-      default:
-        return <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-zinc-100 text-zinc-700">{status}</span>
+  const getStatusBadge = (student) => {
+    const { status, arrivalStatus, arrivalEta, arrivalCheckCount } = student;
+    
+    if (status === "serving" || arrivalStatus === "arrived") {
+      return (
+        <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1.5 w-max">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          Arrived / In Clinic
+        </span>
+      );
     }
+    if (arrivalStatus === "flagged_late") {
+      return (
+        <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-red-50 text-red-700 border border-red-200 flex items-center gap-1.5 w-max animate-bounce">
+          <ShieldAlert className="w-3.5 h-3.5" />
+          Flagged Late (3 Prompts Failed)
+        </span>
+      );
+    }
+    if (arrivalStatus === "delayed") {
+      return (
+        <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1.5 w-max">
+          <Clock className="w-3.5 h-3.5" />
+          Delayed: {arrivalEta} ({arrivalCheckCount}/3)
+        </span>
+      );
+    }
+    if (arrivalStatus === "checking") {
+      return (
+        <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200 flex items-center gap-1.5 w-max">
+          Prompt Sent (Awaiting Confirmation)
+        </span>
+      );
+    }
+    if (status === "completed") {
+      return <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-zinc-100 text-zinc-600 border border-zinc-200">Completed Visit</span>;
+    }
+    if (status === "cancelled") {
+      return <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-red-50 text-red-600 border border-red-200">Cancelled</span>;
+    }
+    return <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">Waiting Scheduled Slot</span>;
   }
 
   return (
@@ -264,44 +324,50 @@ export default function StaffDashboardContainer({ initialPendingRequests, initia
                             {student.time}
                           </td>
                           <td className="px-6 py-4">
-                            {getStatusBadge(student.status)}
+                            {getStatusBadge(student)}
                           </td>
                           <td className="px-6 py-4 text-right">
                             <div className="flex justify-end gap-2">
-                              {student.status === "approved" && (
+                              {student.arrivalStatus === "flagged_late" && (
                                 <>
                                   <button
-                                    onClick={() => handleStatusUpdate(student.id, "serving")}
+                                    onClick={() => handleCancelFlagged(student.id)}
                                     disabled={actionId !== null}
-                                    className="inline-flex items-center space-x-1.5 text-xs font-semibold bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100 px-3 py-1.5 rounded-lg transition-all disabled:opacity-50 cursor-pointer"
+                                    className="inline-flex items-center space-x-1.5 text-xs font-bold bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg shadow-xs transition-all disabled:opacity-50 cursor-pointer"
                                   >
-                                    <Play className="w-3.5 h-3.5" />
-                                    <span>Call In</span>
+                                    <X className="w-3.5 h-3.5" />
+                                    <span>Cancel Appointment</span>
                                   </button>
                                   <button
-                                    onClick={() => handleStatusUpdate(student.id, "no_show")}
+                                    onClick={() => handleAllowExtraTime(student.id)}
                                     disabled={actionId !== null}
-                                    className="inline-flex items-center space-x-1.5 text-xs font-semibold bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-all disabled:opacity-50 cursor-pointer"
+                                    className="inline-flex items-center space-x-1.5 text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg shadow-xs transition-all disabled:opacity-50 cursor-pointer"
                                   >
-                                    <AlertCircle className="w-3.5 h-3.5" />
-                                    <span>No Show</span>
+                                    <Clock className="w-3.5 h-3.5" />
+                                    <span>Allow Extra Time</span>
                                   </button>
                                 </>
                               )}
 
-                              {student.status === "serving" && (
+                              {(student.status === "serving" || student.arrivalStatus === "arrived") && (
                                 <button
                                   onClick={() => handleStatusUpdate(student.id, "completed")}
                                   disabled={actionId !== null}
-                                  className="inline-flex items-center space-x-1.5 text-xs font-semibold bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition-all disabled:opacity-50 cursor-pointer"
+                                  className="inline-flex items-center space-x-1.5 text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition-all disabled:opacity-50 cursor-pointer"
                                 >
-                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-indigo-600" />
                                   <span>Complete Session</span>
                                 </button>
                               )}
 
-                              {["completed", "no_show"].includes(student.status) && (
+                              {["completed", "cancelled", "no_show"].includes(student.status) && (
                                 <span className="text-xs text-zinc-400 italic px-3 py-1.5">Action recorded</span>
+                              )}
+
+                              {student.status === "approved" && student.arrivalStatus !== "flagged_late" && student.arrivalStatus !== "arrived" && (
+                                <span className="text-xs text-purple-700 bg-purple-50 border border-purple-100 font-semibold px-2.5 py-1 rounded-md">
+                                  Auto Arrival Active
+                                </span>
                               )}
                             </div>
                           </td>

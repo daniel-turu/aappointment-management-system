@@ -301,7 +301,10 @@ export async function triageAppointment(appointmentId, data) {
 
     await connectDB()
 
-    const appointment = await Appointment.findById(appointmentId)
+    const appointment = await Appointment.findById(appointmentId).populate({
+      path: "patientId",
+      populate: { path: "userId" }
+    })
     if (!appointment) {
       return { error: "Appointment request not found" }
     }
@@ -313,6 +316,17 @@ export async function triageAppointment(appointmentId, data) {
     appointment.status = "approved"
 
     await appointment.save()
+
+    // Send push notification to the patient
+    const studentUserId = appointment.patientId?.userId?._id
+    if (studentUserId) {
+      await createNotification(
+        studentUserId,
+        "Appointment Approved",
+        `Your appointment for ${departmentName} has been approved for ${date} at ${time}${doctorName ? ` with ${doctorName}` : ''}.`,
+        appointment._id
+      )
+    }
 
     return { success: true }
   } catch (error) {
@@ -334,7 +348,10 @@ export async function rejectAppointment(appointmentId, rejectionReason) {
 
     await connectDB()
 
-    const appointment = await Appointment.findById(appointmentId)
+    const appointment = await Appointment.findById(appointmentId).populate({
+      path: "patientId",
+      populate: { path: "userId" }
+    })
     if (!appointment) {
       return { error: "Appointment request not found" }
     }
@@ -343,6 +360,17 @@ export async function rejectAppointment(appointmentId, rejectionReason) {
     appointment.rejectionReason = rejectionReason
 
     await appointment.save()
+
+    // Send push notification to the patient
+    const studentUserId = appointment.patientId?.userId?._id
+    if (studentUserId) {
+      await createNotification(
+        studentUserId,
+        "Appointment Request Declined",
+        `Your appointment request was declined. Reason: "${rejectionReason}"`,
+        appointment._id
+      )
+    }
 
     return { success: true }
   } catch (error) {
@@ -680,34 +708,39 @@ export async function respondToArrivalCheck(appointmentId, responseType, etaMinu
     const staffUsers = await User.find({ role: { $in: ["staff", "admin"] } })
 
     if (responseType === "yes") {
+      // Patient has arrived: auto-admit them to active clinic session
+      appointment.status = "serving"
       appointment.arrivalStatus = "arrived"
+      appointment.etaExpiresAt = undefined
       await appointment.save()
 
       // Notify staff
       for (const staff of staffUsers) {
         await createNotification(
           staff._id,
-          "Student Arrived",
-          `Student ${session.user.name} has checked in and is waiting in the lobby.`,
+          "Student Arrived & Checked In",
+          `Student ${session.user.name} has confirmed arrival and is now at the clinic.`,
           appointment._id
         )
       }
     } else {
-      // User says not yet, choosing an ETA
+      // Patient requests more time (1, 2, 3, or 5 minutes)
       const currentCount = (appointment.arrivalCheckCount || 0) + 1
       appointment.arrivalCheckCount = currentCount
       appointment.arrivalEta = `${etaMinutes}m`
+      // Set timestamp when this delay expires
+      appointment.etaExpiresAt = new Date(Date.now() + etaMinutes * 60 * 1000)
 
       if (currentCount >= 3) {
-        appointment.arrivalStatus = "no_show_reported"
+        appointment.arrivalStatus = "flagged_late"
         await appointment.save()
 
-        // Notify staff of flag
+        // Notify staff of flag for cancellation or extension
         for (const staff of staffUsers) {
           await createNotification(
             staff._id,
-            "No-Show Flagged",
-            `Student ${session.user.name} was asked 3 times and is still not at the clinic.`,
+            "Late Student Alert (3 Prompts Failed)",
+            `Student ${session.user.name} has delayed 3 times and is not yet at the clinic. You may cancel or allow extra time.`,
             appointment._id
           )
         }
@@ -720,7 +753,7 @@ export async function respondToArrivalCheck(appointmentId, responseType, etaMinu
           await createNotification(
             staff._id,
             "Student Delayed",
-            `Student ${session.user.name} says they are delayed and will be there in ${etaMinutes} mins. (Attempt ${currentCount}/3)`,
+            `Student ${session.user.name} will be there in ${etaMinutes} mins. (Attempt ${currentCount}/3)`,
             appointment._id
           )
         }
@@ -734,7 +767,52 @@ export async function respondToArrivalCheck(appointmentId, responseType, etaMinu
   }
 }
 
-export async function retryArrivalCheck(appointmentId) {
+export async function patientCheckoutAppointment(appointmentId) {
+  try {
+    const session = await auth()
+    if (!session || session.user.role !== "patient") {
+      return { error: "Unauthorized" }
+    }
+
+    await connectDB()
+
+    const appointment = await Appointment.findById(appointmentId).populate({
+      path: "patientId",
+      populate: { path: "userId" }
+    })
+    if (!appointment) {
+      return { error: "Appointment not found" }
+    }
+
+    const patient = await Patient.findOne({ userId: session.user.id })
+    if (!patient || appointment.patientId._id.toString() !== patient._id.toString()) {
+      return { error: "Unauthorized access to appointment." }
+    }
+
+    appointment.status = "completed"
+    appointment.arrivalStatus = "completed"
+    appointment.checkoutTime = new Date()
+    await appointment.save()
+
+    // Notify staff
+    const staffUsers = await User.find({ role: { $in: ["staff", "admin"] } })
+    for (const staff of staffUsers) {
+      await createNotification(
+        staff._id,
+        "Student Checked Out",
+        `Student ${session.user.name} has checked out and completed their clinic visit.`,
+        appointment._id
+      )
+    }
+
+    return { success: true }
+  } catch (error) {
+    console.error("Checkout error:", error)
+    return { error: "Failed to process checkout from clinic." }
+  }
+}
+
+export async function secretaryCancelFlaggedAppointment(appointmentId, cancellationReason = "Did not arrive within scheduled time slot") {
   try {
     const session = await auth()
     if (!session || !["staff", "admin"].includes(session.user.role)) {
@@ -751,25 +829,109 @@ export async function retryArrivalCheck(appointmentId) {
       return { error: "Appointment not found" }
     }
 
-    // Reset counter, set to checking
-    appointment.arrivalCheckCount = 0
-    appointment.arrivalStatus = "checking"
-    appointment.arrivalEta = ""
+    appointment.status = "cancelled"
+    appointment.rejectionReason = cancellationReason
     await appointment.save()
 
     const studentUserId = appointment.patientId?.userId?._id
     if (studentUserId) {
       await createNotification(
         studentUserId,
-        "Are you at the clinic? (Retry)",
-        "The secretary has reset your arrival check. Please confirm if you are now at the clinic.",
+        "Appointment Cancelled",
+        `Your appointment was cancelled by the clinic secretary: "${cancellationReason}".`,
         appointment._id
       )
     }
 
     return { success: true }
   } catch (error) {
-    console.error("Failed to retry arrival check:", error)
-    return { error: "Failed to retry arrival check." }
+    console.error("Failed to cancel flagged appointment:", error)
+    return { error: "Failed to cancel appointment." }
+  }
+}
+
+export async function secretaryAllowExtraTime(appointmentId) {
+  try {
+    const session = await auth()
+    if (!session || !["staff", "admin"].includes(session.user.role)) {
+      return { error: "Unauthorized" }
+    }
+
+    await connectDB()
+
+    const appointment = await Appointment.findById(appointmentId).populate({
+      path: "patientId",
+      populate: { path: "userId" }
+    })
+    if (!appointment) {
+      return { error: "Appointment not found" }
+    }
+
+    appointment.arrivalCheckCount = 0
+    appointment.arrivalStatus = "checking"
+    appointment.etaExpiresAt = undefined
+    await appointment.save()
+
+    const studentUserId = appointment.patientId?.userId?._id
+    if (studentUserId) {
+      await createNotification(
+        studentUserId,
+        "Extra Time Granted",
+        "The clinic secretary has granted extra time. Please confirm when you arrive at the clinic.",
+        appointment._id
+      )
+    }
+
+    return { success: true }
+  } catch (error) {
+    console.error("Failed to allow extra time:", error)
+    return { error: "Failed to extend appointment time." }
+  }
+}
+
+export async function checkAndTriggerArrivalNotifications() {
+  try {
+    await connectDB()
+
+    const now = new Date()
+    const todayStr = now.toISOString().split("T")[0]
+
+    // Find all approved appointments for today that need an arrival check
+    const appointmentsToPrompt = await Appointment.find({
+      date: todayStr,
+      status: "approved",
+      $or: [
+        { arrivalStatus: "none" },
+        { 
+          arrivalStatus: "delayed",
+          etaExpiresAt: { $lte: now }
+        }
+      ]
+    }).populate({
+      path: "patientId",
+      populate: { path: "userId" }
+    })
+
+    let count = 0
+    for (const app of appointmentsToPrompt) {
+      app.arrivalStatus = "checking"
+      await app.save()
+
+      const studentUserId = app.patientId?.userId?._id
+      if (studentUserId) {
+        await createNotification(
+          studentUserId,
+          "Clinic Arrival Check",
+          `Have you arrived at the FUTMinna Health Centre for your ${app.time} appointment?`,
+          app._id
+        )
+        count++
+      }
+    }
+
+    return { success: true, triggeredCount: count }
+  } catch (error) {
+    console.error("Error triggering arrival notifications:", error)
+    return { error: error.message }
   }
 }

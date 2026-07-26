@@ -79,11 +79,17 @@ function TestNotificationPageContent() {
           
           // Render native browser notification if allowed
           if (Notification.permission === "granted") {
-            new Notification(payload.notification?.title || "Test Notification", {
+            const notif = new Notification(payload.notification?.title || "Test Notification", {
               body: payload.notification?.body,
               icon: "https://futminna.edu.ng/wp-content/uploads/2022/11/cropped-futlogo1-192x192.png",
               data: payload.data
             })
+            notif.onclick = (event) => {
+              event.preventDefault()
+              window.focus()
+              const deepLink = payload.data?.url || "/dashboard"
+              window.location.href = deepLink
+            }
           }
         })
         return () => unsubscribe()
@@ -96,6 +102,7 @@ function TestNotificationPageContent() {
   // Request Permission and Generate Token
   const handleRequestToken = async () => {
     addLog("Registering Service Worker with configuration...", "info")
+    let registrationInstance = null
     try {
       if ("serviceWorker" in navigator) {
         const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY?.replace(/"/g, "")
@@ -112,7 +119,7 @@ function TestNotificationPageContent() {
           appId: appId || ""
         }).toString()
 
-        const registration = await navigator.serviceWorker.register(
+        registrationInstance = await navigator.serviceWorker.register(
           `/firebase-messaging-sw.js?${queryParams}`,
           { scope: "/" }
         )
@@ -125,7 +132,7 @@ function TestNotificationPageContent() {
 
     addLog("Requesting token from Firebase client...", "info")
     try {
-      const token = await requestForToken()
+      const token = await requestForToken(registrationInstance)
       setPermission(Notification.permission)
       
       if (token) {

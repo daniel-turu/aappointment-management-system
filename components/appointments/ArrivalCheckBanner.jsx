@@ -91,26 +91,33 @@ export default function ArrivalCheckBanner({ initialAppointments = [] }) {
               <span>Yes, I am here</span>
             </Button>
 
-            <div className="flex items-center bg-purple-900/60 border border-purple-800 rounded-lg p-1">
-              <span className="text-xs text-purple-200 px-2 font-semibold">Not yet, I need:</span>
+            <div className="flex flex-wrap items-center bg-purple-900/60 border border-purple-800 rounded-lg p-1.5 gap-1">
+              <span className="text-xs text-purple-200 px-1.5 font-semibold">Not yet, I need:</span>
               <button
                 disabled={loadingId !== null}
                 onClick={() => handleResponse(app.id, false, 1)}
-                className="hover:bg-purple-800 text-white text-xs font-bold px-2 py-1.5 rounded cursor-pointer transition-colors"
+                className="hover:bg-purple-800 bg-purple-900/80 text-white text-xs font-bold px-2 py-1 rounded cursor-pointer transition-colors"
               >
                 1 Min
               </button>
               <button
                 disabled={loadingId !== null}
+                onClick={() => handleResponse(app.id, false, 2)}
+                className="hover:bg-purple-800 bg-purple-900/80 text-white text-xs font-bold px-2 py-1 rounded cursor-pointer transition-colors"
+              >
+                2 Mins
+              </button>
+              <button
+                disabled={loadingId !== null}
                 onClick={() => handleResponse(app.id, false, 3)}
-                className="hover:bg-purple-800 text-white text-xs font-bold px-2 py-1.5 rounded cursor-pointer transition-colors"
+                className="hover:bg-purple-800 bg-purple-900/80 text-white text-xs font-bold px-2 py-1 rounded cursor-pointer transition-colors"
               >
                 3 Mins
               </button>
               <button
                 disabled={loadingId !== null}
                 onClick={() => handleResponse(app.id, false, 5)}
-                className="hover:bg-purple-800 text-white text-xs font-bold px-2 py-1.5 rounded cursor-pointer transition-colors"
+                className="hover:bg-purple-800 bg-purple-900/80 text-white text-xs font-bold px-2 py-1 rounded cursor-pointer transition-colors"
               >
                 5 Mins
               </button>

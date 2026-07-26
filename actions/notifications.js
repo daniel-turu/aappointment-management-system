@@ -41,6 +41,13 @@ export async function createNotification(userId, title, message, appointmentId =
       console.log(`[FCM SUCCESS] Push sent to ${user.name} (${user.role}) - URL: ${deepLink}`)
     } catch (error) {
       console.error("[FCM ERROR] Failed to send:", error)
+      if (
+        error.code === 'messaging/registration-token-not-registered' || 
+        error.code === 'messaging/invalid-registration-token'
+      ) {
+        console.log(`[FCM CLEANUP] Removing invalid/expired FCM token for user ${user._id}`)
+        await User.findByIdAndUpdate(userId, { $unset: { fcmToken: 1 } })
+      }
     }
   } else {
     console.log(`[FCM SKIPPED] No push sent to ${user?.name || userId}. Reason: ${!user ? 'User not found' : !user.fcmToken ? 'No fcmToken registered for user' : 'Firebase messaging Admin SDK not initialized'}`)

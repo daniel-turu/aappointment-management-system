@@ -56,7 +56,7 @@ export default function NotificationBell() {
           console.log("FCM Service Worker registered scope:", registration.scope)
 
           // Request FCM token and register in DB
-          const token = await requestForToken()
+          const token = await requestForToken(registration)
           if (token) {
             await fetch("/api/notifications/fcm-token", {
               method: "POST",
@@ -95,7 +95,13 @@ export default function NotificationBell() {
             icon: "https://futminna.edu.ng/wp-content/uploads/2022/11/cropped-futlogo1-192x192.png",
             data: payload.data || {}
           };
-          new Notification(notificationTitle, notificationOptions);
+          const notif = new Notification(notificationTitle, notificationOptions);
+          notif.onclick = (event) => {
+            event.preventDefault();
+            window.focus();
+            const deepLink = payload.data?.url || "/dashboard";
+            window.location.href = deepLink;
+          };
         }
         
         // Refresh notifications instantly in UI

@@ -196,7 +196,37 @@ export default function AppointmentsList({ initialAppointments }) {
                       </div>
                     </td>
                     <td className="p-4 text-right">
-                      {isCancellable && (
+                      {(app.status === "serving" || app.arrivalStatus === "arrived") && (
+                        <Button
+                          variant="outline"
+                          size="xs"
+                          className="bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100 font-bold text-xs px-3 py-1.5 h-auto cursor-pointer shadow-xs animate-pulse"
+                          disabled={cancellingId === app.id}
+                          onClick={async () => {
+                            if (!confirm("Are you done with your clinic visit and checking out?")) return;
+                            setCancellingId(app.id);
+                            try {
+                              const { patientCheckoutAppointment } = await import("@/actions/appointments");
+                              const res = await patientCheckoutAppointment(app.id);
+                              if (res.success) {
+                                setAppointments(prev =>
+                                  prev.map(a => a.id === app.id ? { ...a, status: "completed", arrivalStatus: "completed" } : a)
+                                );
+                              } else {
+                                alert(res.error || "Failed to check out.");
+                              }
+                            } catch (e) {
+                              alert("Checkout failed. Please try again.");
+                            } finally {
+                              setCancellingId(null);
+                            }
+                          }}
+                        >
+                          Checkout from Clinic
+                        </Button>
+                      )}
+
+                      {isCancellable && app.status !== "serving" && (
                         <div className="flex items-center justify-end gap-2">
                           {!app.shiftRequested ? (
                             <Button

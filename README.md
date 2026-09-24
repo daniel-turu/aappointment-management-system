@@ -1,36 +1,69 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# FUTMinna Appointment Management System
 
-## Getting Started
+A Next.js & MongoDB based appointment management system containerized to run locally with Docker and local file storage.
 
-First, run the development server:
+## 🚀 Running Locally with Docker
+
+### Prerequisites
+- Docker Engine & Docker Compose installed on your system.
+
+### Quick Start (One Command)
+Run the following command in the project root directory:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+docker compose up --build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+This will automatically:
+1. Spin up a local **MongoDB 7.0** container (`futminna_ams_mongo`) on port `27017`.
+2. Build and start the **Next.js Web Application** container (`futminna_ams_web`) on port `3000`.
+3. Auto-seed all static accounts into local MongoDB on startup.
+4. Mount persistent Docker volumes for database data (`mongo_data`) and local file uploads (`uploads_data`).
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+Access the web app at: **`http://localhost:3000`**
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
+## 👥 Static Accounts (Reflected in Local DB)
 
-To learn more about Next.js, take a look at the following resources:
+All static accounts are seeded with password: **`password123`**
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Role | Email | Password | Description |
+|---|---|---|---|
+| **Admin** | `admin@futminna.edu.ng` | `password123` | System Administrator |
+| **Staff** | `secretary@futminna.edu.ng` | `password123` | Clinic Secretary / Triage |
+| **Patient** | `gideon.okoro@futminna.edu.ng` | `password123` | Student (Computer Science) |
+| **Patient** | `zainab.abubakar@futminna.edu.ng` | `password123` | Student (Cyber Security) |
+| **Patient** | `chinedu.okafor@futminna.edu.ng` | `password123` | Student (Electrical Eng.) |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+---
 
-## Deploy on Vercel
+## 📂 Local File Storage (Cloudinary Replacement)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+File uploads are stored locally in `/public/uploads/` (backed by a persistent Docker volume `uploads_data`).
+* **API Endpoint**: `POST /api/upload`
+* **Server Action**: `uploadLocalFile(formData)` in `actions/upload.js`
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+---
+
+## 🛠 Manual Local Running (Without Docker)
+
+If you have MongoDB running locally on your machine:
+
+1. Create a `.env.local` file:
+   ```env
+   MONGODB_URI=mongodb://localhost:27017/futminna_ams
+   NEXTAUTH_SECRET=local_secret_key
+   NEXTAUTH_URL=http://localhost:3000
+   ```
+
+2. Install dependencies & Seed database:
+   ```bash
+   npm install
+   npm run seed:all
+   ```
+
+3. Start dev server:
+   ```bash
+   npm run dev
+   ```
